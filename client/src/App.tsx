@@ -1,94 +1,754 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Activity, AlertTriangle, ArrowRight, BellRing, CheckCircle2, Clock3, HeartPulse, MapPin, Plus, Radio, ShieldCheck, Users, X } from 'lucide-react';
-import { createRequest, getDonors, getMatches, getRequests, simulateOutreach } from './services/api';
-import type { BloodGroup, Donor, EmergencyRequest } from './types';
 
-type View = 'Overview' | 'Requests' | 'Donors' | 'Matching' | 'Admin';
-const bloodGroups: BloodGroup[] = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+import { useState } from "react";
+import "./App.css";
 
-export default function App() {
-  const [view, setView] = useState<View>('Overview');
-  const [requests, setRequests] = useState<EmergencyRequest[]>([]);
-  const [donors, setDonors] = useState<Donor[]>([]);
-  const [selected, setSelected] = useState<string>('');
-  const [matches, setMatches] = useState<Donor[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+type RequestStatus = "Urgent" | "Pending" | "Matched" | "Completed";
+
+type BloodRequest = {
+  id: string;
+  bloodGroup: string;
+  component: string;
+  units: number;
+  hospital: string;
+  location: string;
+  deadline: string;
+  status: RequestStatus;
+};
+
+const initialRequests: BloodRequest[] = [
+  {
+    id: "HL-1024",
+    bloodGroup: "O-",
+    component: "Whole blood",
+    units: 2,
+    hospital: "City General Hospital",
+    location: "Central Guwahati",
+    deadline: "Within 2 hours",
+    status: "Urgent",
+  },
+  {
+    id: "HL-1023",
+    bloodGroup: "B+",
+    component: "Packed red cells",
+    units: 1,
+    hospital: "Hillview Medical Centre",
+    location: "Dispur",
+    deadline: "Within 5 hours",
+    status: "Matched",
+  },
+  {
+    id: "HL-1022",
+    bloodGroup: "A+",
+    component: "Platelets",
+    units: 2,
+    hospital: "Regional Hospital",
+    location: "Jalukbari",
+    deadline: "Within 6 hours",
+    status: "Pending",
+  },
+];
+
+const demoDonors = [
+  {
+    name: "Donor A",
+    group: "O-",
+    distance: "2.4 km",
+    eta: "12 min",
+    status: "Available in demo",
+  },
+  {
+    name: "Donor B",
+    group: "O-",
+    distance: "4.1 km",
+    eta: "19 min",
+    status: "Awaiting confirmation",
+  },
+  {
+    name: "Donor C",
+    group: "O-",
+    distance: "6.8 km",
+    eta: "27 min",
+    status: "Awaiting confirmation",
+  },
+];
+
+type Page = "Overview" | "Blood requests" | "Donors" | "Ambulances";
+
+function App() {
+  const [page, setPage] = useState<Page>("Overview");
+  const [requests, setRequests] = useState(initialRequests);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ patientLabel: 'Emergency patient', hospital: 'Himalayan District Hospital', location: 'Itanagar, Arunachal Pradesh', bloodGroup: 'O+' as BloodGroup, units: 2, urgency: 'Critical' });
+  const [notice, setNotice] = useState("");
 
-  async function refresh() {
-    try {
-      setError('');
-      const [r, d] = await Promise.all([getRequests(), getDonors()]);
-      setRequests(r); setDonors(d);
-      if (!selected && r[0]) setSelected(r[0].id);
-    } catch { setError('Could not connect to the API. Start the app from the repository root with npm run dev.'); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { void refresh(); }, []);
-  useEffect(() => {
-    if (!selected) return;
-    getMatches(selected).then(setMatches).catch(() => setMatches([]));
-  }, [selected, requests.length]);
+  const [bloodGroup, setBloodGroup] = useState("O-");
+  const [component, setComponent] = useState("Packed red cells");
+  const [units, setUnits] = useState(1);
+  const [hospital, setHospital] = useState("");
+  const [location, setLocation] = useState("");
+  const [deadline, setDeadline] = useState("2 hours");
+  const [contact, setContact] = useState("");
 
-  const activeRequests = useMemo(() => requests.filter(r => r.status !== 'Transport arranged').length, [requests]);
-  async function submitRequest(e: React.FormEvent) {
-    e.preventDefault();
-    try {
-      const created = await createRequest({ ...form, units: Number(form.units) });
-      setRequests(prev => [created, ...prev]); setSelected(created.id); setShowForm(false); setView('Matching');
-      setNotice('Demo request created. No real hospital or donor was contacted.');
-    } catch { setError('Request could not be created. Check that the API is running.'); }
-  }
-  async function outreach() {
-    if (!selected) return;
-    try {
-      const result = await simulateOutreach(selected);
-      setNotice(`Demo outreach queued for ${result.count} matched donor(s). No messages were sent.`);
-    } catch { setError('Could not simulate outreach.'); }
+  const urgentCount = requests.filter(
+    (request) => request.status === "Urgent"
+  ).length;
+
+  function createRequest(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const newRequest: BloodRequest = {
+      id: `HL-${Date.now().toString().slice(-6)}`,
+      bloodGroup,
+      component,
+      units,
+      hospital: hospital.trim(),
+      location: location.trim(),
+      deadline: `Within ${deadline}`,
+      status: "Pending",
+    };
+
+    setRequests((current) => [newRequest, ...current]);
+    setShowForm(false);
+    setPage("Blood requests");
+    setNotice(
+      `Demo request ${newRequest.id} created. Hospital verification and donor alerts are not enabled.`
+    );
+
+    setHospital("");
+    setLocation("");
+    setContact("");
+    setUnits(1);
   }
 
-  const nav: { label: View; icon: typeof Activity }[] = [
-    { label: 'Overview', icon: Activity }, { label: 'Requests', icon: AlertTriangle },
-    { label: 'Donors', icon: Users }, { label: 'Matching', icon: Radio }, { label: 'Admin', icon: ShieldCheck }
+  function updateStatus(id: string, status: RequestStatus) {
+    setRequests((current) =>
+      current.map((request) =>
+        request.id === id ? { ...request, status } : request
+      )
+    );
+    setNotice(`Request ${id} updated in this demo session.`);
+  }
+
+  const navigation: Page[] = [
+    "Overview",
+    "Blood requests",
+    "Donors",
+    "Ambulances",
   ];
 
-  return <div className="app-shell">
-    <aside className="sidebar">
-      <div className="brand"><div className="brand-mark"><HeartPulse size={22}/></div><div><strong>HillLink</strong><small>EMERGENCY NETWORK</small></div></div>
-      <div className="workspace-label">WORKSPACE</div>
-      <nav>{nav.map(item => <button key={item.label} className={`nav-item ${view === item.label ? 'active' : ''}`} onClick={() => setView(item.label)}><item.icon size={18}/><span>{item.label}</span>{item.label === 'Requests' && <b>{activeRequests}</b>}</button>)}</nav>
-      <div className="sidebar-bottom"><div className="online-dot"/> Demo environment <span className="demo-pill">DEMO</span></div>
-    </aside>
-    <main className="main-area">
-      <header className="topbar"><div><div className="eyebrow">REGIONAL RESPONSE / ARUNACHAL PRADESH</div><h1>{view === 'Overview' ? 'Emergency overview' : view === 'Admin' ? 'System overview' : view}</h1></div><div className="top-actions"><span className="demo-label"><span className="online-dot"/> Simulation mode</span><button className="icon-button" aria-label="Notifications" onClick={() => setNotice('There are no live notifications. This is a simulation.')}><BellRing size={18}/></button><div className="avatar">OP</div></div></header>
-      {error && <div className="alert error"><AlertTriangle size={17}/>{error}<button onClick={() => void refresh()} className="text-button">Retry</button></div>}
-      {notice && <div className="alert success"><CheckCircle2 size={17}/><span>{notice}</span><button className="close" onClick={() => setNotice('')} aria-label="Dismiss"><X size={16}/></button></div>}
-      {loading ? <div className="loading">Loading demo workspace…</div> : <>
-        {view === 'Overview' && <><div className="hero"><div className="hero-copy"><span className="hero-tag"><span className="pulse"/> COORDINATION CENTER</span><h2>Every minute matters.<br/><em>Every connection counts.</em></h2><p>Coordinate urgent donor requests across difficult terrain with focused, verified outreach.</p><button className="primary-button" onClick={() => setShowForm(true)}><Plus size={17}/> Create emergency request</button></div><div className="hero-graphic"><div className="orbit orbit-one"/><div className="orbit orbit-two"/><div className="hero-heart"><HeartPulse size={58}/></div><div className="floating-node node-one"><MapPin size={17}/></div><div className="floating-node node-two"><Users size={17}/></div><div className="floating-node node-three"><Radio size={17}/></div><span className="graphic-caption">CONNECTED RESPONSE</span></div></div>
-          <div className="stats-grid"><Stat icon={AlertTriangle} label="Active requests" value={String(activeRequests).padStart(2,'0')} detail="Awaiting coordination" tone="orange"/><Stat icon={Users} label="Registered demo donors" value={String(donors.length).padStart(2,'0')} detail="Synthetic sample records" tone="blue"/><Stat icon={Clock3} label="Average match ETA" value="42 min" detail="Illustrative estimate only" tone="purple"/><Stat icon={CheckCircle2} label="Requests coordinated" value={String(requests.filter(r=>r.status==='Donor confirmed'||r.status==='Transport arranged').length).padStart(2,'0')} detail="Demo request states" tone="green"/></div>
-          <div className="content-grid"><section className="panel"><div className="panel-heading"><div><h3>Priority requests</h3><p>Requests requiring coordination</p></div><button className="link-button" onClick={() => setView('Requests')}>View all <ArrowRight size={15}/></button></div><RequestList requests={requests.slice(0,4)} onSelect={id => {setSelected(id);setView('Matching');}}/></section><section className="panel response-panel"><div className="panel-heading"><div><h3>Response snapshot</h3><p>Current demo network</p></div><div className="status-icon"><Activity size={18}/></div></div><div className="response-number">{donors.filter(d=>d.available).length}<span> available donors</span></div><div className="mini-track"><span style={{width:`${donors.length ? donors.filter(d=>d.available).length/donors.length*100 : 0}%`}}/></div><div className="response-row"><span>Availability in sample data</span><strong>{donors.length ? Math.round(donors.filter(d=>d.available).length/donors.length*100) : 0}%</strong></div><div className="response-note"><ShieldCheck size={17}/><span>Demo records only. Real-world verification is not enabled.</span></div><button className="secondary-button full" onClick={() => setView('Matching')}>Open matching workspace <ArrowRight size={16}/></button></section></div></>}
-        {view === 'Requests' && <section className="panel page-panel"><div className="panel-heading"><div><h3>Emergency requests</h3><p>Fictional sample cases and requests created in this session.</p></div><button className="primary-button compact" onClick={() => setShowForm(true)}><Plus size={16}/> New request</button></div><RequestList requests={requests} onSelect={id => {setSelected(id);setView('Matching');}}/></section>}
-        {view === 'Donors' && <section className="panel page-panel"><div className="panel-heading"><div><h3>Demo donor directory</h3><p>All names and records below are synthetic.</p></div><span className="count-pill">{donors.length} records</span></div><div className="donor-grid">{donors.map(d=><div className="donor-card" key={d.id}><div className="donor-top"><div className="donor-avatar">{d.name.split(' ').map(n=>n[0]).join('').slice(0,2)}</div><span className={`availability ${d.available?'available':'unavailable'}`}>{d.available?'Available':'Unavailable'}</span></div><h4>{d.name}</h4><p>{d.location}</p><div className="donor-meta"><span className="blood-chip">{d.bloodGroup}</span><span><Clock3 size={14}/> {d.travelMinutes} min est.</span></div><small>Sample verification: {d.lastVerified}</small></div>)}</div></section>}
-        {view === 'Matching' && <section className="panel page-panel"><div className="panel-heading"><div><h3>Donor matching workspace</h3><p>Ranked by blood-group match, availability, and illustrative travel time.</p></div><span className="count-pill">DEMO MATCH ENGINE</span></div><label className="field-label">Select request<select value={selected} onChange={e=>setSelected(e.target.value)}>{requests.map(r=><option value={r.id} key={r.id}>{r.id} · {r.bloodGroup} · {r.hospital}</option>)}</select></label>{requests.find(r=>r.id===selected) && <div className="selected-request"><div><span className="eyebrow">SELECTED REQUEST</span><h4>{requests.find(r=>r.id===selected)?.hospital}</h4><p>{requests.find(r=>r.id===selected)?.location} · {requests.find(r=>r.id===selected)?.units} units · {requests.find(r=>r.id===selected)?.bloodGroup}</p></div><Status status={requests.find(r=>r.id===selected)!.status}/></div>}<div className="match-heading"><h4>Best available matches</h4><span>{matches.length} eligible demo matches</span></div>{matches.length===0?<p className="empty">No available sample matches for this request.</p>:matches.map((d,i)=><div className="match-row" key={d.id}><div className="rank">{i+1}</div><div className="match-person"><strong>{d.name}</strong><span>{d.location} · {d.bloodGroup}</span></div><div className="match-eta"><Clock3 size={15}/><strong>{d.travelMinutes} min</strong><small>estimated</small></div><span className="availability available">Available</span></div>)}<div className="matching-footer"><p><ShieldCheck size={16}/> Eligibility and travel times are illustrative, not verified.</p><button className="primary-button" disabled={!matches.length} onClick={() => void outreach()}><Radio size={16}/> Simulate outreach to top matches</button></div></section>}
-        {view === 'Admin' && <div className="admin-grid"><section className="panel"><div className="panel-heading"><div><h3>Platform status</h3><p>Prototype health indicators</p></div></div>{[['API connection', 'Connected'],['Database', 'In-memory demo data'],['SMS / voice', 'Simulated only'],['Authentication', 'Not implemented'],['Real donor verification', 'Not implemented']].map(([k,v])=><div className="admin-row" key={k}><span>{k}</span><strong>{v}</strong></div>)}</section><section className="panel"><div className="panel-heading"><div><h3>Safety checklist</h3><p>Before any real deployment</p></div></div>{['Add secure authentication and roles','Obtain donor consent and verify identity','Use clinically reviewed eligibility criteria','Integrate validated road routing','Test and audit real messaging','Complete privacy and security review'].map(s=><div className="check-row" key={s}><ShieldCheck size={17}/>{s}</div>)}</section></div>}
-      </>}
-      <footer className="footer"><span>HillLink <span className="muted">· Prototype v0.1</span></span><span><span className="online-dot"/> Synthetic data · No real outreach</span></footer>
-    </main>
-    {showForm && <div className="modal-backdrop" role="presentation" onMouseDown={e=>{if(e.target===e.currentTarget)setShowForm(false)}}><form className="modal" onSubmit={submitRequest}><div className="modal-heading"><div><span className="eyebrow">NEW CASE</span><h2>Create emergency request</h2></div><button type="button" className="icon-button" onClick={()=>setShowForm(false)} aria-label="Close"><X size={18}/></button></div><p className="modal-note"><ShieldCheck size={16}/> Use fictional details for this demo. No real patient information.</p><label className="field-label">Patient label<input required value={form.patientLabel} onChange={e=>setForm({...form,patientLabel:e.target.value})}/></label><label className="field-label">Hospital / facility<input required value={form.hospital} onChange={e=>setForm({...form,hospital:e.target.value})}/></label><label className="field-label">Location<input required value={form.location} onChange={e=>setForm({...form,location:e.target.value})}/></label><div className="form-row"><label className="field-label">Blood group<select value={form.bloodGroup} onChange={e=>setForm({...form,bloodGroup:e.target.value as BloodGroup})}>{bloodGroups.map(b=><option key={b}>{b}</option>)}</select></label><label className="field-label">Units<input type="number" min="1" max="10" required value={form.units} onChange={e=>setForm({...form,units:Number(e.target.value)})}/></label></div><label className="field-label">Urgency<select value={form.urgency} onChange={e=>setForm({...form,urgency:e.target.value})}><option>Critical</option><option>Urgent</option><option>Routine</option></select></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={()=>setShowForm(false)}>Cancel</button><button type="submit" className="primary-button">Create demo request <ArrowRight size={16}/></button></div></form></div>}
-  </div>;
+  return (
+    <div className="hilllink-app">
+      <aside className="sidebar">
+        <a className="brand" href="#" onClick={(event) => {
+          event.preventDefault();
+          setPage("Overview");
+        }}>
+          <span className="brand-icon">H+</span>
+          <span>
+            <strong>HillLink</strong>
+            <small>Emergency coordination</small>
+          </span>
+        </a>
+
+        <div className="nav-label">WORKSPACE</div>
+
+        <nav className="navigation" aria-label="Main navigation">
+          {navigation.map((item) => (
+            <button
+              key={item}
+              className={`nav-item ${page === item ? "active" : ""}`}
+              onClick={() => setPage(item)}
+            >
+              <span className="nav-symbol">
+                {item === "Overview"
+                  ? "◫"
+                  : item === "Blood requests"
+                    ? "✚"
+                    : item === "Donors"
+                      ? "♡"
+                      : "＋"}
+              </span>
+              {item}
+              {item === "Blood requests" && urgentCount > 0 && (
+                <span className="nav-count">{urgentCount}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        <div className="sidebar-bottom">
+          <div className="demo-card">
+            <span className="demo-dot" />
+            <strong>Demo environment</strong>
+            <p>Sample records only. No real emergency alerts are sent.</p>
+          </div>
+          <div className="profile">
+            <div className="avatar">HD</div>
+            <div>
+              <strong>Hospital dashboard</strong>
+              <small>Demo operator</small>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main className="main-content">
+        <header className="topbar">
+          <div className="breadcrumb">
+            <span>HillLink</span>
+            <span>/</span>
+            <strong>{page}</strong>
+          </div>
+          <div className="topbar-right">
+            <span className="demo-label">DEMO MODE</span>
+            <span className="connection-label">
+              <span className="connection-dot" />
+              Local session
+            </span>
+          </div>
+        </header>
+
+        <div className="page-content">
+          {notice && (
+            <div className="notice" role="status">
+              <span>{notice}</span>
+              <button
+                className="notice-close"
+                onClick={() => setNotice("")}
+                aria-label="Dismiss notification"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {page === "Overview" && (
+            <>
+              <section className="welcome-row">
+                <div>
+                  <div className="eyebrow">EMERGENCY RESPONSE WORKSPACE</div>
+                  <h1>Every minute matters.</h1>
+                  <p className="page-description">
+                    Coordinate blood requests, potential donors, and ambulance
+                    availability from one place.
+                  </p>
+                </div>
+                <button
+                  className="primary-button"
+                  onClick={() => setShowForm(true)}
+                >
+                  <span>＋</span> New blood request
+                </button>
+              </section>
+
+              <section className="stats-grid" aria-label="Request statistics">
+                <StatCard
+                  label="Active requests"
+                  value={String(requests.length)}
+                  detail="Demo records"
+                  symbol="▤"
+                />
+                <StatCard
+                  label="Urgent requests"
+                  value={String(urgentCount)}
+                  detail="Require attention"
+                  symbol="!"
+                  highlight
+                />
+                <StatCard
+                  label="Potential donors"
+                  value="3"
+                  detail="Sample donor records"
+                  symbol="♡"
+                />
+                <StatCard
+                  label="Ambulances"
+                  value="2"
+                  detail="Sample fleet records"
+                  symbol="＋"
+                />
+              </section>
+
+              <section className="content-grid">
+                <div className="panel requests-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>Recent blood requests</h2>
+                      <p>Review and update demo requests.</p>
+                    </div>
+                    <button
+                      className="text-button"
+                      onClick={() => setPage("Blood requests")}
+                    >
+                      View all →
+                    </button>
+                  </div>
+                  <RequestList
+                    requests={requests.slice(0, 4)}
+                    onStatusChange={updateStatus}
+                  />
+                </div>
+
+                <div className="panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>Coordination map</h2>
+                      <p>Location overview</p>
+                    </div>
+                    <span className="map-pin">⌖</span>
+                  </div>
+                  <div className="map-placeholder">
+                    <div className="map-road road-one" />
+                    <div className="map-road road-two" />
+                    <div className="map-road road-three" />
+                    <div className="map-water" />
+                    <div className="map-marker marker-one">H</div>
+                    <div className="map-marker marker-two">+</div>
+                    <div className="map-marker marker-three">A</div>
+                    <div className="map-caption">
+                      <strong>Guwahati region</strong>
+                      <span>Illustrative map · Not live navigation</span>
+                    </div>
+                  </div>
+                  <p className="map-note">
+                    Live road routing, traffic, and GPS require additional
+                    map-service integration.
+                  </p>
+                </div>
+              </section>
+
+              <section className="panel workflow-panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Emergency coordination workflow</h2>
+                    <p>How a request moves through HillLink</p>
+                  </div>
+                </div>
+                <div className="workflow-grid">
+                  <WorkflowStep
+                    number="01"
+                    title="Create request"
+                    description="Enter the blood requirement, hospital, and deadline."
+                  />
+                  <WorkflowStep
+                    number="02"
+                    title="Verify details"
+                    description="Confirm the requester and hospital before contacting donors."
+                  />
+                  <WorkflowStep
+                    number="03"
+                    title="Match donors"
+                    description="Check compatibility, consent, availability, and travel estimates."
+                  />
+                  <WorkflowStep
+                    number="04"
+                    title="Coordinate transport"
+                    description="A dispatcher reviews ambulance availability and approves dispatch."
+                  />
+                </div>
+              </section>
+            </>
+          )}
+
+          {page === "Blood requests" && (
+            <>
+              <section className="welcome-row">
+                <div>
+                  <div className="eyebrow">REQUEST MANAGEMENT</div>
+                  <h1>Blood requests</h1>
+                  <p className="page-description">
+                    Track requirements, deadlines, and request status.
+                  </p>
+                </div>
+                <button
+                  className="primary-button"
+                  onClick={() => setShowForm(true)}
+                >
+                  ＋ New request
+                </button>
+              </section>
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>All requests</h2>
+                    <p>{requests.length} requests in this demo session</p>
+                  </div>
+                </div>
+                <RequestList
+                  requests={requests}
+                  onStatusChange={updateStatus}
+                />
+              </section>
+            </>
+          )}
+
+          {page === "Donors" && (
+            <>
+              <section className="welcome-row">
+                <div>
+                  <div className="eyebrow">DONOR COORDINATION</div>
+                  <h1>Potential donors</h1>
+                  <p className="page-description">
+                    Example donor matches for an O-negative request.
+                  </p>
+                </div>
+                <span className="demo-label">SAMPLE DATA</span>
+              </section>
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Suggested donor list</h2>
+                    <p>
+                      Illustrative distances and ETAs, not live locations or
+                      confirmed availability.
+                    </p>
+                  </div>
+                </div>
+                <div className="donor-list">
+                  {demoDonors.map((donor) => (
+                    <div className="donor-row" key={donor.name}>
+                      <div className="avatar donor-avatar">♡</div>
+                      <div className="donor-main">
+                        <strong>{donor.name}</strong>
+                        <span>{donor.status}</span>
+                      </div>
+                      <div className="donor-detail">
+                        <small>Blood group</small>
+                        <strong>{donor.group}</strong>
+                      </div>
+                      <div className="donor-detail">
+                        <small>Distance</small>
+                        <strong>{donor.distance}</strong>
+                      </div>
+                      <div className="donor-detail">
+                        <small>Illustrative ETA</small>
+                        <strong>{donor.eta}</strong>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="safety-note">
+                  Blood group compatibility alone does not establish medical
+                  eligibility. Qualified staff and the hospital blood bank
+                  must confirm suitability. No donor notifications are sent.
+                </p>
+              </section>
+            </>
+          )}
+
+          {page === "Ambulances" && (
+            <>
+              <section className="welcome-row">
+                <div>
+                  <div className="eyebrow">TRANSPORT COORDINATION</div>
+                  <h1>Ambulance coordination</h1>
+                  <p className="page-description">
+                    Review example fleet records before dispatch approval.
+                  </p>
+                </div>
+                <span className="demo-label">SAMPLE DATA</span>
+              </section>
+              <section className="panel">
+                <div className="panel-header">
+                  <div>
+                    <h2>Available fleet records</h2>
+                    <p>Example information for the interface preview.</p>
+                  </div>
+                </div>
+                <div className="ambulance-grid">
+                  <AmbulanceCard
+                    id="AMB-01"
+                    base="Central station"
+                    status="Demo available"
+                    eta="14 min"
+                  />
+                  <AmbulanceCard
+                    id="AMB-02"
+                    base="North station"
+                    status="Demo available"
+                    eta="22 min"
+                  />
+                </div>
+                <p className="safety-note">
+                  These are not live vehicles. Real dispatch requires verified
+                  locations, availability rechecks, route feasibility, and
+                  explicit dispatcher approval.
+                </p>
+              </section>
+            </>
+          )}
+
+          <footer className="footer">
+            <span>HillLink · Emergency coordination</span>
+            <span>Prototype · No live emergency services connected</span>
+          </footer>
+        </div>
+      </main>
+
+      {showForm && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowForm(false);
+          }}
+        >
+          <section
+            className="request-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="request-modal-title"
+          >
+            <div className="modal-header">
+              <div>
+                <div className="eyebrow">NEW EMERGENCY REQUEST</div>
+                <h2 id="request-modal-title">Blood requirement details</h2>
+                <p>Fields marked * are required.</p>
+              </div>
+              <button
+                className="close-button"
+                onClick={() => setShowForm(false)}
+                aria-label="Close form"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={createRequest}>
+              <div className="form-grid">
+                <label>
+                  Blood group *
+                  <select
+                    value={bloodGroup}
+                    onChange={(event) => setBloodGroup(event.target.value)}
+                  >
+                    {["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"].map(
+                      (group) => (
+                        <option key={group}>{group}</option>
+                      )
+                    )}
+                  </select>
+                </label>
+
+                <label>
+                  Blood component *
+                  <select
+                    value={component}
+                    onChange={(event) => setComponent(event.target.value)}
+                  >
+                    <option>Packed red cells</option>
+                    <option>Whole blood</option>
+                    <option>Platelets</option>
+                    <option>Plasma</option>
+                  </select>
+                </label>
+
+                <label>
+                  Units required *
+                  <input
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={units}
+                    onChange={(event) => setUnits(Number(event.target.value))}
+                    required
+                  />
+                </label>
+
+                <label>
+                  Required within *
+                  <select
+                    value={deadline}
+                    onChange={(event) => setDeadline(event.target.value)}
+                  >
+                    <option value="30 minutes">30 minutes</option>
+                    <option value="1 hour">1 hour</option>
+                    <option value="2 hours">2 hours</option>
+                    <option value="5 hours">5 hours</option>
+                    <option value="12 hours">12 hours</option>
+                    <option value="24 hours">24 hours</option>
+                  </select>
+                </label>
+
+                <label className="full-width">
+                  Hospital or medical facility *
+                  <input
+                    value={hospital}
+                    onChange={(event) => setHospital(event.target.value)}
+                    placeholder="Enter hospital name"
+                    required
+                    maxLength={120}
+                  />
+                </label>
+
+                <label className="full-width">
+                  Hospital location *
+                  <input
+                    value={location}
+                    onChange={(event) => setLocation(event.target.value)}
+                    placeholder="Area, town, or address"
+                    required
+                    maxLength={200}
+                  />
+                </label>
+
+                <label className="full-width">
+                  Requester contact number
+                  <input
+                    type="tel"
+                    value={contact}
+                    onChange={(event) => setContact(event.target.value)}
+                    placeholder="Optional in this UI demo"
+                    maxLength={20}
+                  />
+                </label>
+              </div>
+
+              <div className="form-warning">
+                <strong>Demo only.</strong> Creating this form adds a local
+                sample request. It does not verify a hospital, contact donors,
+                or contact emergency services.
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setShowForm(false)}
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="primary-button">
+                  Create demo request
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
+    </div>
+  );
 }
 
-function Stat({icon: Icon, label, value, detail, tone}: {icon: typeof Activity; label: string; value: string; detail: string; tone: string}) {
-  return <div className="stat-card"><div className={`stat-icon ${tone}`}><Icon size={19}/></div><div className="stat-label">{label}</div><div className="stat-value">{value}</div><div className="stat-detail">{detail}</div></div>;
+function StatCard({
+  label,
+  value,
+  detail,
+  symbol,
+  highlight = false,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  symbol: string;
+  highlight?: boolean;
+}) {
+  return (
+    <article className="stat-card">
+      <div className="stat-top">
+        <span>{label}</span>
+        <span className={`stat-symbol ${highlight ? "urgent-symbol" : ""}`}>
+          {symbol}
+        </span>
+      </div>
+      <div className="stat-value">{value}</div>
+      <div className="stat-detail">{detail}</div>
+    </article>
+  );
 }
-function Status({status}: {status: string}) {
-  const tone = status === 'Critical' ? 'critical' : status === 'Matching' ? 'matching' : 'confirmed';
-  return <span className={`status ${tone}`}>{status}</span>;
+
+function RequestList({
+  requests,
+  onStatusChange,
+}: {
+  requests: BloodRequest[];
+  onStatusChange: (id: string, status: RequestStatus) => void;
+}) {
+  if (requests.length === 0) {
+    return <p className="empty-state">No requests have been created yet.</p>;
+  }
+
+  return (
+    <div className="request-list">
+      {requests.map((request) => (
+        <article className="request-row" key={request.id}>
+          <div className="blood-badge">{request.bloodGroup}</div>
+          <div className="request-main">
+            <div className="request-title">
+              <strong>{request.hospital}</strong>
+              <span className={`status-badge status-${request.status.toLowerCase()}`}>
+                {request.status}
+              </span>
+            </div>
+            <span className="request-subtitle">
+              {request.id} · {request.component} · {request.units} unit(s)
+            </span>
+            <span className="request-location">
+              ⌖ {request.location} · {request.deadline}
+            </span>
+          </div>
+          <label className="status-editor">
+            <span>Demo status</span>
+            <select
+              aria-label={`Update status for ${request.id}`}
+              value={request.status}
+              onChange={(event) =>
+                onStatusChange(request.id, event.target.value as RequestStatus)
+              }
+            >
+              <option value="Urgent">Urgent</option>
+              <option value="Pending">Pending</option>
+              <option value="Matched">Matched</option>
+              <option value="Completed">Completed</option>
+            </select>
+          </label>
+        </article>
+      ))}
+    </div>
+  );
 }
-function RequestList({requests, onSelect}: {requests: EmergencyRequest[]; onSelect: (id: string)=>void}) {
-  if (!requests.length) return <div className="empty">No requests available.</div>;
-  return <div className="request-list">{requests.map(r=><button className="request-row" key={r.id} onClick={()=>onSelect(r.id)}><div className="request-blood">{r.bloodGroup}</div><div className="request-info"><strong>{r.hospital}</strong><span><MapPin size={13}/>{r.location}</span></div><div className="request-units"><strong>{r.units} units</strong><small>{r.urgency}</small></div><Status status={r.status}/><ArrowRight size={16} className="row-arrow"/></button>)}</div>;
+
+function WorkflowStep({
+  number,
+  title,
+  description,
+}: {
+  number: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <article className="workflow-step">
+      <span className="workflow-number">{number}</span>
+      <h3>{title}</h3>
+      <p>{description}</p>
+    </article>
+  );
 }
+
+function AmbulanceCard({
+  id,
+  base,
+  status,
+  eta,
+}: {
+  id: string;
+  base: string;
+  status: string;
+  eta: string;
+}) {
+  return (
+    <article className="ambulance-card">
+      <div className="ambulance-icon">＋</div>
+      <div className="ambulance-info">
+        <strong>{id}</strong>
+        <span>{base}</span>
+        <span>{status}</span>
+      </div>
+      <div className="ambulance-eta">
+        <small>Sample ETA</small>
+        <strong>{eta}</strong>
+      </div>
+    </article>
+  );
+}
+
+export default App;
