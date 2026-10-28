@@ -81,6 +81,22 @@ const demoDonors = [
   },
 ];
 
+const demoAmbulances: Ambulance[] = [
+  {
+    id: "AMB-01",
+    vehicleNumber: "DEMO-101",
+    available: true,
+    distanceKm: 3.2,
+  },
+  {
+    id: "AMB-02",
+    vehicleNumber: "DEMO-102",
+    available: true,
+    distanceKm: 6.5,
+  },
+];
+
+
 type Page = "Overview" | "Blood requests" | "Donors" | "Ambulances";
 
 function App() {
