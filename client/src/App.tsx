@@ -1,6 +1,15 @@
 
-import { useState } from "react";
-import "./App.css";
+import {
+  findMatchingDonors,
+  type BloodGroup,
+  type Donor,
+} from "./donorMatching";
+
+import {
+  assignNearestAmbulance,
+  type Ambulance,
+  type AmbulanceAssignment,
+} from "./ambulanceCoordination";
 
 type RequestStatus = "Urgent" | "Pending" | "Matched" | "Completed";
 
